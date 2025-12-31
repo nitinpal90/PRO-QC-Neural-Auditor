@@ -3,13 +3,10 @@ import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { 
   ShieldCheck, 
-  Play, 
   Download, 
-  CheckCircle, 
   Loader2,
   AlertTriangle,
   FileSpreadsheet,
-  RotateCcw,
   Zap,
   Target,
   Box,
@@ -106,13 +103,12 @@ const App: React.FC = () => {
 
   const validateAccess = async (userEmail: string | undefined) => {
     if (!userEmail) return;
-    const { data, error: accessError } = await supabase
+    const { data } = await supabase
       .from('user_access')
       .select('is_blocked')
       .eq('email', userEmail)
       .single();
 
-    // If record exists and is blocked
     if (data?.is_blocked) {
       setIsBlocked(true);
       await supabase.auth.signOut();
@@ -128,20 +124,24 @@ const App: React.FC = () => {
     e.preventDefault();
     setAuthError('');
     
-    if (isSignUp) {
-      const { data, error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: { display_name: fullName }
-        }
-      });
-      if (signUpError) setAuthError(signUpError.message);
-      else await validateAccess(data.user?.email);
-    } else {
-      const { data, error: loginError } = await supabase.auth.signInWithPassword({ email, password });
-      if (loginError) setAuthError(loginError.message);
-      else await validateAccess(data.user?.email);
+    try {
+      if (isSignUp) {
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { display_name: fullName }
+          }
+        });
+        if (signUpError) throw signUpError;
+        if (data.user) await validateAccess(data.user.email);
+      } else {
+        const { data, error: loginError } = await supabase.auth.signInWithPassword({ email, password });
+        if (loginError) throw loginError;
+        if (data.user) await validateAccess(data.user.email);
+      }
+    } catch (err: any) {
+      setAuthError(err.message);
     }
   };
 
@@ -157,12 +157,6 @@ const App: React.FC = () => {
   const handleFileSelect = (type: UploadType, file: File) => {
     setFiles(prev => ({ ...prev, [type]: file }));
     setResult(null);
-  };
-
-  const handleReset = () => {
-    setFiles(initialFileState);
-    setResult(null);
-    setError(null);
   };
 
   const startValidation = async () => {
@@ -236,7 +230,7 @@ const App: React.FC = () => {
 
           <form onSubmit={handleAuth} className="space-y-6">
             {isSignUp && (
-              <div className="space-y-2 animate-in slide-in-from-top-4 duration-300">
+              <div className="space-y-2">
                 <label className={`text-[10px] font-black uppercase tracking-widest ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Full Name</label>
                 <div className="relative">
                   <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
@@ -299,9 +293,6 @@ const App: React.FC = () => {
               </button>
             </div>
           </form>
-          <div className="mt-10 flex justify-center gap-4">
-             {socials.map((s, idx) => <SocialIcon key={idx} {...s} theme={theme} />)}
-          </div>
         </div>
       </div>
     );
@@ -311,8 +302,6 @@ const App: React.FC = () => {
 
   return (
     <div className={`min-h-screen transition-colors duration-500 font-['Inter'] ${theme === 'dark' ? 'bg-[#05070A] text-slate-100' : 'bg-[#F8FAFC] text-slate-900'}`}>
-      
-      {/* Navigation */}
       <nav className={`h-24 sticky top-0 z-[100] border-b backdrop-blur-3xl transition-all duration-500 ${theme === 'dark' ? 'bg-[#05070A]/80 border-slate-800' : 'bg-white/80 border-slate-100'}`}>
         <div className="max-w-[1500px] mx-auto px-10 h-full flex items-center justify-between">
           <div className="flex items-center gap-6">
@@ -324,11 +313,10 @@ const App: React.FC = () => {
                 PRO QC <span className="text-blue-500 not-italic">Neural Auditor</span>
               </h1>
               <div className="flex items-center gap-3 mt-1">
-                <span className={`text-[10px] font-black uppercase tracking-[0.3em] ${theme === 'dark' ? 'text-slate-300' : 'text-slate-400'}`}>Welcome, <span className="text-blue-400">{displayName}</span></span>
+                <span className={`text-[10px] font-black uppercase tracking-[0.3em] ${theme === 'dark' ? 'text-slate-300' : 'text-slate-400'}`}>
+                  Welcome, <span className="text-blue-400">{displayName}</span>
+                </span>
                 <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
-                <div className="flex gap-1.5">
-                  {socials.map((s, idx) => <SocialIcon key={idx} {...s} theme={theme} />)}
-                </div>
               </div>
             </div>
           </div>
@@ -340,7 +328,6 @@ const App: React.FC = () => {
             >
               {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
-            <div className={`h-10 w-px ${theme === 'dark' ? 'bg-slate-800' : 'bg-slate-200'}`}></div>
             <button 
               onClick={handleLogout}
               className={`px-7 py-3.5 rounded-[1.25rem] text-[11px] font-black uppercase tracking-widest flex items-center gap-3 transition-all active:scale-95 border-2 shadow-xl ${theme === 'dark' ? 'bg-red-500/10 border-red-500/20 text-red-500 hover:bg-red-500 hover:text-white' : 'bg-white border-slate-100 text-slate-600 hover:border-red-200 hover:text-red-500'}`}
@@ -352,206 +339,82 @@ const App: React.FC = () => {
       </nav>
 
       <main className="max-w-[1500px] mx-auto px-10 py-20">
-        
-        <section className="mb-24 text-center animate-in fade-in slide-in-from-top-4 duration-700">
+        <section className="mb-24 text-center">
           <div className="inline-flex items-center gap-3 bg-blue-500/15 text-blue-500 px-7 py-2.5 rounded-full text-[11px] font-black uppercase tracking-[0.25em] mb-12 border border-blue-500/30">
             <Sparkles className="w-4 h-4" /> Secure Quality Control Suite
           </div>
-          <h2 className={`text-8xl font-black mb-10 tracking-tighter leading-[0.9] transition-colors ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
+          <h2 className={`text-8xl font-black mb-10 tracking-tighter leading-[0.9] ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
             Audit Your <span className="text-blue-500 italic">Inventory</span> With <br/>
             <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-500 via-indigo-400 to-blue-600">Pure Accuracy</span>
           </h2>
-          <p className={`text-2xl font-medium max-w-4xl mx-auto leading-relaxed transition-colors ${theme === 'dark' ? 'text-slate-200' : 'text-slate-500'}`}>
-            The high-speed audit solution for enterprise listing data. 
-            Automate validation against brand, color, and size masters with full structural integrity.
-          </p>
-        </section>
-
-        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10 mb-32">
-          <FeatureTile theme={theme} icon={Target} title="Mapping Sync" desc="Category-Based Rule Logic" colorClass="bg-blue-600 shadow-blue-500/30" />
-          <FeatureTile theme={theme} icon={Box} title="Name Validation" desc="Clean String Consistency" colorClass="bg-indigo-600 shadow-indigo-500/30" />
-          <FeatureTile theme={theme} icon={Layers} title="Policy Check" desc="Attribute Compliance Audit" colorClass="bg-amber-600 shadow-amber-500/30" />
-          <FeatureTile theme={theme} icon={FileSearch} title="Final Audit" desc="Verified Submission Ready" colorClass="bg-emerald-600 shadow-emerald-500/30" />
         </section>
 
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-16">
           <div className="xl:col-span-8 space-y-16">
             <div className={`p-12 rounded-[4rem] border transition-all duration-500 ${theme === 'dark' ? 'bg-slate-900/40 border-slate-800 shadow-2xl' : 'bg-white border-slate-100 shadow-2xl shadow-slate-200/50'}`}>
-              <div className="flex items-center justify-between mb-14">
-                <div>
-                  <h3 className={`text-4xl font-black tracking-tighter ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>Reference Data</h3>
-                  <p className="text-[10px] font-black uppercase tracking-[0.5em] text-blue-500 mt-3">Stage 01: Context Configuration</p>
-                </div>
-                <div className={`w-20 h-20 rounded-full flex items-center justify-center font-black text-3xl ${theme === 'dark' ? 'bg-slate-800 text-slate-300' : 'bg-slate-50 text-slate-300'}`}>01</div>
-              </div>
-
+              <h3 className={`text-4xl font-black tracking-tighter mb-10 ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>Reference Data</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
                 <FileUploadZone theme={theme} label="Brand Authority" selectedFile={files[UploadType.MASTER_BRANDS]} onFileSelect={(f) => handleFileSelect(UploadType.MASTER_BRANDS, f)} />
-                <FileUploadZone theme={theme} label="Color Palette Master" selectedFile={files[UploadType.MASTER_COLORS]} onFileSelect={(f) => handleFileSelect(UploadType.MASTER_COLORS, f)} description="Checks Color Names" />
-                <FileUploadZone theme={theme} label="Size Matrix Master" selectedFile={files[UploadType.MASTER_SIZES]} onFileSelect={(f) => handleFileSelect(UploadType.MASTER_SIZES, f)} description="Checks Size Names" />
-                <FileUploadZone theme={theme} label="Category Mapper" selectedFile={files[UploadType.MASTER_CATEGORIES]} onFileSelect={(f) => handleFileSelect(UploadType.MASTER_CATEGORIES, f)} description="Category To Template Mapping" />
+                <FileUploadZone theme={theme} label="Color Palette Master" selectedFile={files[UploadType.MASTER_COLORS]} onFileSelect={(f) => handleFileSelect(UploadType.MASTER_COLORS, f)} />
+                <FileUploadZone theme={theme} label="Size Matrix Master" selectedFile={files[UploadType.MASTER_SIZES]} onFileSelect={(f) => handleFileSelect(UploadType.MASTER_SIZES, f)} />
+                <FileUploadZone theme={theme} label="Category Mapper" selectedFile={files[UploadType.MASTER_CATEGORIES]} onFileSelect={(f) => handleFileSelect(UploadType.MASTER_CATEGORIES, f)} />
                 <div className="lg:col-span-2">
-                   <FileUploadZone theme={theme} label="Marketplace Spec Sheet" selectedFile={files[UploadType.MASTER_TEMPLATE_EXPORT]} onFileSelect={(f) => handleFileSelect(UploadType.MASTER_TEMPLATE_EXPORT, f)} description="Rules, Selection Types & Required Fields" />
+                   <FileUploadZone theme={theme} label="Marketplace Spec Sheet" selectedFile={files[UploadType.MASTER_TEMPLATE_EXPORT]} onFileSelect={(f) => handleFileSelect(UploadType.MASTER_TEMPLATE_EXPORT, f)} />
                 </div>
               </div>
             </div>
 
-            <div className={`p-12 rounded-[4rem] border transition-all duration-500 group ${theme === 'dark' ? 'bg-slate-900/40 border-slate-800 shadow-2xl' : 'bg-white border-slate-100 shadow-2xl shadow-slate-200/50'}`}>
-              <div className="flex items-center justify-between mb-14">
-                <div className="flex items-center gap-10">
-                  <div className={`w-28 h-28 rounded-[2.5rem] flex items-center justify-center text-white shadow-2xl transition-all duration-700 group-hover:scale-105 group-hover:rotate-2 ${theme === 'dark' ? 'bg-blue-600 shadow-blue-900/50' : 'bg-slate-900 shadow-slate-400/30'}`}>
-                    <FileSpreadsheet className="w-14 h-14" />
-                  </div>
-                  <div>
-                    <h3 className={`text-4xl font-black tracking-tighter ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>Deployment Batch</h3>
-                    <p className="text-[10px] font-black uppercase tracking-[0.5em] text-blue-500 mt-3">Stage 02: Transaction Processing</p>
-                  </div>
-                </div>
-                <div className={`w-20 h-20 rounded-full flex items-center justify-center font-black text-3xl ${theme === 'dark' ? 'bg-slate-800 text-slate-300' : 'bg-slate-50 text-slate-300'}`}>02</div>
-              </div>
-              <FileUploadZone theme={theme} label="Article Content Sheet" selectedFile={files[UploadType.USER_SHEET]} onFileSelect={(f) => handleFileSelect(UploadType.USER_SHEET, f)} description="Targets: Names, Attributes & Hierarchy" />
+            <div className={`p-12 rounded-[4rem] border transition-all duration-500 ${theme === 'dark' ? 'bg-slate-900/40 border-slate-800 shadow-2xl' : 'bg-white border-slate-100 shadow-2xl shadow-slate-200/50'}`}>
+              <h3 className={`text-4xl font-black tracking-tighter mb-10 ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>Deployment Batch</h3>
+              <FileUploadZone theme={theme} label="Article Content Sheet" selectedFile={files[UploadType.USER_SHEET]} onFileSelect={(f) => handleFileSelect(UploadType.USER_SHEET, f)} />
             </div>
           </div>
 
           <div className="xl:col-span-4">
             <div className="sticky top-40 space-y-12">
-              <div className={`p-12 rounded-[4rem] relative overflow-hidden transition-all duration-500 border ${theme === 'dark' ? 'bg-slate-900 border-slate-800 shadow-[0_40px_120px_-20px_rgba(0,0,0,0.8)]' : 'bg-[#0F172A] border-slate-800 shadow-[0_40px_100px_-20px_rgba(15,23,42,0.4)] text-white'}`}>
-                <div className="absolute -top-10 -right-10 w-48 h-48 bg-blue-500/20 blur-[100px] rounded-full"></div>
-                
-                <h3 className="text-[11px] font-black mb-12 flex items-center gap-3 relative z-10 text-blue-400 uppercase tracking-[0.6em]">
-                   <Zap className="w-5 h-5 fill-current" /> Tactical Hub
-                </h3>
-                
+              <div className={`p-12 rounded-[4rem] border ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-[#0F172A] border-slate-800 text-white'}`}>
                 <button
                   disabled={isProcessing}
                   onClick={startValidation}
-                  className={`w-full py-9 rounded-[2.25rem] font-black text-[14px] uppercase tracking-[0.3em] flex items-center justify-center gap-4 transition-all relative z-10 shadow-2xl ${
+                  className={`w-full py-9 rounded-[2.25rem] font-black text-[14px] uppercase tracking-[0.3em] flex items-center justify-center gap-4 transition-all ${
                     isProcessing 
                       ? 'bg-slate-800 cursor-not-allowed opacity-50' 
                       : 'bg-blue-600 hover:bg-blue-500 shadow-blue-600/50 active:scale-95 text-white'
                   }`}
                 >
-                  {isProcessing ? (
-                    <><Loader2 className="w-7 h-7 animate-spin" /> Verifying Data...</>
-                  ) : (
-                    'Initiate Pro Audit'
-                  )}
+                  {isProcessing ? <><Loader2 className="w-7 h-7 animate-spin" /> Auditing...</> : 'Initiate Pro Audit'}
                 </button>
 
-                {error && (
-                  <div className="mt-10 p-8 bg-red-500/10 border border-red-500/20 rounded-[2.5rem] flex gap-5 items-start text-red-100 relative z-10 animate-in slide-in-from-top-4">
-                    <AlertTriangle className="w-6 h-6 shrink-0 text-red-500 mt-1" />
-                    <p className="text-xs font-bold leading-relaxed">{error}</p>
-                  </div>
-                )}
+                {error && <p className="mt-8 text-red-500 text-xs font-bold text-center">{error}</p>}
 
                 {result && (
-                  <div className="mt-16 space-y-12 animate-in slide-in-from-bottom-10 duration-700 relative z-10">
+                  <div className="mt-16 space-y-12">
                     <div className="grid grid-cols-2 gap-8">
-                      <div className="bg-white/5 p-8 rounded-[3rem] border border-white/10 backdrop-blur-3xl transition-all hover:bg-white/15">
-                        <p className="text-[10px] text-slate-300 font-black uppercase tracking-widest mb-4">Neural Success</p>
-                        <div className="flex items-baseline gap-3">
-                           <p className="text-6xl font-black text-green-400 tracking-tighter">{result.stats.passed}</p>
-                           <span className="text-xs font-black text-green-400/60 uppercase">OK</span>
-                        </div>
+                      <div className="bg-white/5 p-8 rounded-[3rem] border border-white/10">
+                        <p className="text-[10px] text-slate-300 font-black mb-4">Neural Success</p>
+                        <p className="text-6xl font-black text-green-400">{result.stats.passed}</p>
                       </div>
-                      <div className="bg-white/5 p-8 rounded-[3rem] border border-white/10 backdrop-blur-3xl transition-all hover:bg-white/15">
-                        <p className="text-[10px] text-slate-300 font-black uppercase tracking-widest mb-4">Audit Failures</p>
-                        <div className="flex items-baseline gap-3">
-                           <p className="text-6xl font-black text-red-500 tracking-tighter">{result.stats.failed}</p>
-                           <span className="text-xs font-black text-red-500/60 uppercase">ERR</span>
-                        </div>
+                      <div className="bg-white/5 p-8 rounded-[3rem] border border-white/10">
+                        <p className="text-[10px] text-slate-300 font-black mb-4">Audit Failures</p>
+                        <p className="text-6xl font-black text-red-500">{result.stats.failed}</p>
                       </div>
                     </div>
-
-                    <div className="bg-white/5 p-8 rounded-[2.5rem] border border-white/10 space-y-6">
-                       <div className="flex justify-between items-center text-[11px] font-black uppercase tracking-[0.25em]">
-                          <span className="text-slate-300">Category Logic</span>
-                          <span className={result.stats.catErrors === 0 ? 'text-green-400' : 'text-red-400'}>{result.stats.catErrors === 0 ? 'Optimal' : result.stats.catErrors + ' Errors'}</span>
-                       </div>
-                       <div className="flex justify-between items-center text-[11px] font-black uppercase tracking-[0.25em]">
-                          <span className="text-slate-300">Attribute Sync</span>
-                          <span className={result.stats.valErrors === 0 ? 'text-green-400' : 'text-red-400'}>{result.stats.valErrors === 0 ? 'Optimal' : result.stats.valErrors + ' Errors'}</span>
-                       </div>
-                    </div>
-
                     <button
                       onClick={() => exportToExcel(result)}
-                      className={`w-full py-8 rounded-[2.5rem] font-black text-[14px] uppercase tracking-[0.3em] flex items-center justify-center gap-4 transition-all shadow-2xl active:scale-95 group ${theme === 'dark' ? 'bg-white text-slate-900 hover:bg-slate-100' : 'bg-white text-[#0F172A] hover:bg-slate-50'}`}
+                      className="w-full py-8 rounded-[2.5rem] font-black text-[14px] uppercase tracking-[0.3em] flex items-center justify-center gap-4 bg-white text-slate-900 hover:bg-slate-100"
                     >
-                      <Download className="w-6 h-6 transition-transform group-hover:translate-y-1.5" /> Export Audit Log
+                      <Download className="w-6 h-6" /> Export Report
                     </button>
                   </div>
                 )}
-              </div>
-
-              <div className={`p-12 rounded-[3.5rem] border transition-all duration-500 relative overflow-hidden ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-xl'}`}>
-                <div className="flex items-center gap-4 mb-12">
-                  <div className="w-3 h-3 rounded-full bg-blue-600 animate-pulse shadow-[0_0_10px_rgba(37,99,235,0.8)]"></div>
-                  <h4 className={`text-xs font-black uppercase tracking-[0.5em] ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>Audit Protocol</h4>
-                </div>
-                <div className="space-y-12">
-                  {[
-                    { t: 'Smart Name Isolation', d: 'Filters target string names only, ignoring ID columns for accuracy.' },
-                    { t: 'Dynamic Hierarchy Link', d: 'The 1st category segment dictates recursive attribute rules.' },
-                    { t: 'Submission Protocol', d: 'Success status is reserved for articles with zero violations.' },
-                    { t: 'Delimiter Strictness', d: 'Validation for pipes with strict zero-whitespace policy.' }
-                  ].map((item, i) => (
-                    <div key={i} className="flex gap-8">
-                      <div className={`text-[13px] font-black w-12 h-12 flex items-center justify-center rounded-2xl shrink-0 border ${theme === 'dark' ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-100 text-slate-500'}`}>0{i+1}</div>
-                      <div>
-                        <p className={`text-[14px] font-black tracking-tight ${theme === 'dark' ? 'text-white' : 'text-slate-800'}`}>{item.t}</p>
-                        <p className={`text-[11px] leading-normal mt-3 font-bold uppercase tracking-[0.1em] ${theme === 'dark' ? 'text-slate-200' : 'text-slate-500'}`}>{item.d}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
               </div>
             </div>
           </div>
         </div>
       </main>
-
-      <footer className={`transition-all duration-500 border-t py-16 px-16 flex flex-col lg:flex-row justify-between items-center gap-12 ${theme === 'dark' ? 'bg-[#05070A]/60 border-slate-800 shadow-inner' : 'bg-white border-slate-100'}`}>
-        <div className="flex items-center gap-6 group">
-           <div className="w-4 h-4 rounded-full bg-blue-600 shadow-[0_0_20px_rgba(37,99,235,1)] group-hover:scale-125 transition-transform"></div>
-           <span className="text-[11px] font-black uppercase tracking-[0.6em] text-slate-400 group-hover:text-blue-400 transition-colors">Neural Stream Optimal</span>
-        </div>
-        
-        <div className="flex flex-col md:flex-row gap-12 items-center">
-          <div className="flex gap-4">
-            {socials.map((s, idx) => (
-              <a 
-                key={idx} 
-                href={s.href} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className={`p-4 rounded-2xl transition-all hover:scale-110 active:scale-95 border shadow-lg group ${theme === 'dark' ? 'bg-slate-800 border-slate-700 text-slate-100 hover:text-blue-400 hover:border-blue-500/50' : 'bg-white border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-200'}`}
-              >
-                <s.icon className="w-5 h-5" />
-              </a>
-            ))}
-          </div>
-          <div className={`hidden md:block h-12 w-px ${theme === 'dark' ? 'bg-slate-800' : 'bg-slate-200'}`}></div>
-          <div className="text-center md:text-left">
-            <p className={`text-[11px] font-black uppercase tracking-[0.5em] ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>© 2025 <span className="text-blue-500">NITIN PAL</span></p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap justify-center gap-8 lg:gap-14 text-[11px] font-black uppercase tracking-[0.5em]">
-           <button 
-             onClick={() => window.open('https://github.com/nitinpal90', '_blank')} 
-             className="hover:text-blue-500 cursor-pointer transition-all flex items-center gap-2"
-           >
-             GITHUB AUDIT <ExternalLink className="w-3 h-3" />
-           </button>
-           <button 
-             onClick={() => window.open('https://bento.me/lynxnitin', '_blank')} 
-             className="hover:text-blue-500 cursor-pointer transition-all flex items-center gap-2"
-           >
-             PERSONAL PORTFOLIO <ExternalLink className="w-3 h-3" />
-           </button>
-        </div>
+      
+      <footer className="py-20 border-t border-slate-800 text-center">
+        <p className="text-[11px] font-black uppercase tracking-[0.5em] text-slate-500">© 2025 NITIN PAL</p>
       </footer>
     </div>
   );
