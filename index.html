@@ -3,9 +3,45 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PRO QC Auditor | Babyshop</title>
+  <title>PRO QC Auditor | Babyshop Neural Suite</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --accent: #3B82F6;
+    }
+    body {
+      background-color: #05070A;
+      margin: 0;
+      font-family: 'Inter', sans-serif;
+      overflow-x: hidden;
+    }
+    .neural-grid {
+      background-image: 
+        linear-gradient(to right, rgba(59, 130, 246, 0.05) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(59, 130, 246, 0.05) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+    .neural-glow {
+      background: radial-gradient(circle at 50% 50%, rgba(59, 130, 246, 0.15) 0%, transparent 50%);
+    }
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #05070A; }
+    ::-webkit-scrollbar-thumb { background: #1E293B; border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3B82F6; }
+
+    @keyframes scan {
+      0% { transform: translateY(-100%); opacity: 0; }
+      50% { opacity: 0.5; }
+      100% { transform: translateY(100%); opacity: 0; }
+    }
+    .scan-line {
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      animation: scan 2s linear infinite;
+    }
+  </style>
 <script type="importmap">
 {
   "imports": {
@@ -21,9 +57,9 @@
 }
 </script>
 </head>
-<body class="bg-[#05070A] text-slate-100">
-  <div id="root"></div>
-  <!-- Vite entry point -->
+<body class="text-slate-100 neural-grid">
+  <div class="fixed inset-0 neural-glow pointer-events-none"></div>
+  <div id="root" class="relative z-10"></div>
   <script type="module" src="/index.tsx"></script>
 </body>
 </html>

@@ -1,4 +1,3 @@
-
 import * as XLSX from 'xlsx';
 import { ValidationRule, MasterData, RowQCResult, ProcessedData, UploadType } from '../types';
 
@@ -58,6 +57,7 @@ export const runQCValidation = async (
   const userRows = getSheetData(files[UploadType.USER_SHEET]);
   const userSheet = files[UploadType.USER_SHEET].Sheets[files[UploadType.USER_SHEET].SheetNames[0]];
   const headersRaw = (XLSX.utils.sheet_to_json(userSheet, { header: 1 })[0] as string[]) || [];
+  const normalizedUserHeaders = headersRaw.map(h => normalize(h));
 
   let catErrors = 0;
   let valErrors = 0;
@@ -67,78 +67,68 @@ export const runQCValidation = async (
     const rowErrors: string[] = [];
     const userCatValue = row['1st Category'] || '';
     const userFirstCat = normalize(String(userCatValue).split('>')[0]);
-    let categoryStatus: RowQCResult['categoryStatus'] = 'Passed';
     
+    // 1. Template Identification
     const expectedTemplate = master.categories.get(userFirstCat);
-    
-    if (!userFirstCat) {
-      categoryStatus = 'Failed';
-      rowErrors.push("1st Category Missing");
-    } else if (!expectedTemplate) {
-      categoryStatus = 'Failed';
-      rowErrors.push(`Category "${userFirstCat}" unknown`);
-    }
-
     const userTemplateName = String(row['Template Name'] || row['Template'] || '').trim();
+    const activeRules = master.templateRules.get(userTemplateName) || [];
+
+    // 2. Header QC Logic
+    const mandatoryFields = activeRules.filter(r => r.mandatory).map(r => normalize(r.fieldName));
+    const missingHeaders = mandatoryFields.filter(f => !normalizedUserHeaders.includes(f));
+    const headerQCStatus = missingHeaders.length === 0 ? 'Passed' : `Failed: Missing ${missingHeaders.join(', ')}`;
+
+    // 3. Category & Template Status
+    let categoryStatus: RowQCResult['categoryStatus'] = 'Passed';
+    if (!userFirstCat) { categoryStatus = 'Failed'; rowErrors.push("1st Category Missing"); }
+    else if (!expectedTemplate) { categoryStatus = 'Failed'; rowErrors.push(`Category "${userFirstCat}" unknown`); }
+
     let templateStatus: RowQCResult['templateStatus'] = 'Passed';
-    
-    if (!userTemplateName) {
-      templateStatus = 'Failed';
-      rowErrors.push("Template missing");
-    } else if (expectedTemplate && normalize(userTemplateName) !== normalize(expectedTemplate)) {
+    if (!userTemplateName) { templateStatus = 'Failed'; rowErrors.push("Template missing"); }
+    else if (expectedTemplate && normalize(userTemplateName) !== normalize(expectedTemplate)) {
       templateStatus = 'Failed';
       rowErrors.push(`Template mismatch: Expected "${expectedTemplate}"`);
     }
 
-    const activeRules = master.templateRules.get(userTemplateName) || [];
+    // 4. Value QC Logic
     const valueErrors: string[] = [];
-
     activeRules.forEach(rule => {
       const userVal = row[rule.fieldName];
-      if (rule.mandatory && !String(userVal || '').trim()) {
-        valueErrors.push(`Mandatory: ${rule.fieldName}`);
+      const normKey = normalize(rule.fieldName);
+      const strValue = String(userVal || '').trim();
+
+      // Mandatory check
+      if (rule.mandatory && !strValue) {
+        valueErrors.push(`${rule.fieldName} is Mandatory`);
+        return;
       }
-    });
 
-    Object.keys(row).forEach(key => {
-      const rawValue = row[key];
-      if (rawValue === undefined || rawValue === null || String(rawValue).trim() === '') return;
+      if (!strValue) return;
 
-      const normKey = normalize(key);
-      const strValue = String(rawValue).trim();
-      const rule = activeRules.find(r => normalize(r.fieldName) === normKey);
-
+      // Type & Content Check
       let valuesToCheck: string[] = [];
-      if (rule?.selectionType === 'select') {
-        if (strValue.includes('|')) valueErrors.push(`${key}: Only one value allowed`);
+      if (rule.selectionType === 'select') {
+        if (strValue.includes('|')) valueErrors.push(`${rule.fieldName}: Single value expected, found multiple`);
         valuesToCheck = [normalize(strValue)];
-      } else if (rule?.selectionType === 'multi-select') {
-        if (strValue.includes(' |') || strValue.includes('| ')) valueErrors.push(`${key}: Pipe spaces error`);
+      } else if (rule.selectionType === 'multi-select') {
         valuesToCheck = strValue.split('|').map(v => normalize(v));
       } else {
         valuesToCheck = [normalize(strValue)];
       }
 
       valuesToCheck.forEach(val => {
-        // STRICT CHECK: Only validate against names, ignore any variation/id columns
-        const isColorNameCol = normKey === 'color name' || normKey === 'colour name' || (normKey.includes('color') && normKey.includes('name'));
-        const isSizeNameCol = normKey === 'size name' || (normKey.includes('size') && normKey.includes('name'));
-        const isBrandCol = normKey === 'brand' || normKey === 'brand name';
+        // Global Authority Check
+        const isColor = normKey.includes('color name') || normKey.includes('colour name');
+        const isSize = normKey.includes('size name');
+        const isBrand = normKey === 'brand' || normKey === 'brand name';
 
-        if (isBrandCol) {
-          if (!master.brands.has(val)) valueErrors.push(`Brand "${val}" invalid`);
-        }
-        else if (isColorNameCol) {
-          if (!master.colors.has(val)) valueErrors.push(`Color "${val}" invalid`);
-        }
-        else if (isSizeNameCol) {
-          if (!master.sizes.has(val)) valueErrors.push(`Size "${val}" invalid`);
-        }
+        if (isBrand && !master.brands.has(val)) valueErrors.push(`Brand "${val}" invalid`);
+        else if (isColor && !master.colors.has(val)) valueErrors.push(`Color "${val}" invalid`);
+        else if (isSize && !master.sizes.has(val)) valueErrors.push(`Size "${val}" invalid`);
 
-        if (rule && rule.allowedValues.length > 0) {
-          if (!rule.allowedValues.includes(val)) {
-            valueErrors.push(`${key}: "${val}" not allowed`);
-          }
+        // Template Specific Allowed Values
+        if (rule.allowedValues.length > 0 && !rule.allowedValues.includes(val)) {
+          valueErrors.push(`${rule.fieldName}: "${val}" not allowed`);
         }
       });
     });
@@ -147,13 +137,14 @@ export const runQCValidation = async (
     if (templateStatus === 'Failed') templateErrors++;
     if (valueErrors.length > 0) valErrors++;
 
-    const isSuccess = categoryStatus === 'Passed' && templateStatus === 'Passed' && valueErrors.length === 0;
+    const isSuccess = categoryStatus === 'Passed' && templateStatus === 'Passed' && valueErrors.length === 0 && headerQCStatus === 'Passed';
 
     return {
       categoryStatus,
       templateStatus,
       valueStatus: valueErrors.length === 0 ? 'Passed' : 'Failed',
-      errorSummary: isSuccess ? 'Success' : 'Failed',
+      headerQCStatus, // Custom field for exact mapping
+      errorSummary: isSuccess ? 'Passed' : 'Failed',
       criticalErrors: [...rowErrors, ...valueErrors]
     };
   });
@@ -162,10 +153,10 @@ export const runQCValidation = async (
     headers: headersRaw,
     rows: userRows,
     qcResults,
-    fileName: `Babyshop_QC_Success_Report_${new Date().getTime()}.xlsx`,
+    fileName: `Babyshop_QC_Audit_Report_${new Date().toISOString().split('T')[0]}.xlsx`,
     stats: {
       total: userRows.length,
-      passed: qcResults.filter(r => r.errorSummary === 'Success').length,
+      passed: qcResults.filter(r => r.errorSummary === 'Passed').length,
       failed: qcResults.filter(r => r.errorSummary === 'Failed').length,
       catErrors,
       valErrors,
@@ -176,16 +167,17 @@ export const runQCValidation = async (
 
 export const exportToExcel = (data: ProcessedData) => {
   const wsData = data.rows.map((row, idx) => {
-    const res = data.qcResults[idx];
+    const res = data.qcResults[idx] as any;
     return {
       ...row,
-      'QC Final Status': res.errorSummary,
-      'QC Remarks': res.errorSummary === 'Success' ? 'All checks passed' : res.criticalErrors.join(' | ')
+      'Header QC': res.headerQCStatus,
+      'Values QC': res.criticalErrors.join(' | ') || 'All Values Passed',
+      'QC Summary': res.errorSummary === 'Passed' ? 'Passed' : `Failed - ${res.criticalErrors.slice(0, 3).join(' | ')}${res.criticalErrors.length > 3 ? '...' : ''}`
     };
   });
 
   const ws = XLSX.utils.json_to_sheet(wsData);
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'QC Report');
+  XLSX.utils.book_append_sheet(wb, ws, 'Babyshop QC Audit');
   XLSX.writeFile(wb, data.fileName);
 };
