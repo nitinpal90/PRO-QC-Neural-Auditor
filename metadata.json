@@ -1,0 +1,5 @@
+{
+  "name": "QC Assistant for Babyshop",
+  "description": "A high-performance QC validation tool for Babyshop attribute sheets, supporting multiple master templates and automated rule-based validation.",
+  "requestFramePermissions": []
+}
